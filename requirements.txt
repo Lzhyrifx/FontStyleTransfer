@@ -1,0 +1,14 @@
+opencv-python
+pillow
+requests
+httpx
+torch
+torchvision
+gradio
+huggingface-hub
+fastapi
+transformers
+kornia_rs
+pygame
+fonttools
+torchaudio
