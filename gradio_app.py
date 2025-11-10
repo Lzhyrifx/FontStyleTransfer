@@ -157,9 +157,6 @@ def run_fontdiffuser_demo_mode(
                 print(f"Saved single character image: {char_filepath}")
             except Exception as e:
                 print(f"Error saving single character image {char_filepath}: {e}")
-
-
-
     return final_image
 
 
