@@ -8,3 +8,6 @@
 # 安装
 ckpt:[GoogleDrive](https://drive.google.com/drive/folders/12hfuZ9MQvXqcteNuz7JQ2B_mUcTr-5jZ?usp=drive_link) / [BaiduYun:gexg](https://pan.baidu.com/s/19t1B7le8x8L2yFGaOvyyBQ)
 <br>运行gradio_app.py
+
+# 图像转字体
+img2svg:svg.py
