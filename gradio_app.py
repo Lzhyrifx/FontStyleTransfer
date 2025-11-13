@@ -33,7 +33,7 @@ def run_fontdiffuser_demo_mode(
         args,
         pipe,
         ttf_path: str,
-        source_image: Optional[Image.Image],
+        source_image: Optional[Image.Image], # 保留，用于 Option 1
         character: str,
         reference_images,
         num_inference_steps: int = 20,
@@ -83,6 +83,7 @@ def run_fontdiffuser_demo_mode(
         char_args.algorithm_type = "dpmsolver++"
         char_args.demo = True
         char_args.ttf_path = ttf_path
+        # Option 2 时 source_image 为 None，所以 character_input 会是 True
         char_args.character_input = False if source_image is not None else True
         char_args.content_character = char
         char_args.num_inference_steps = num_inference_steps
@@ -147,7 +148,6 @@ def process_with_mode(
         args,
         pipe,
         ttf_path: str,
-        source_image: Optional[Image.Image],
         input_mode: str,  # 'Manual Input' or 'Upload TXT File'
         manual_character: str,
         txt_file: str,
@@ -156,8 +156,11 @@ def process_with_mode(
         guidance_scale: float = 7.5,
         seed: Optional[int] = None,
 ):
-    """根据选择的模式处理请求"""
+    """根据选择的模式处理请求 (Option 2 专用)"""
     print(f"DEBUG: input_mode = {input_mode}, manual_character = '{manual_character}', txt_file = {txt_file}")
+    # 在 Option 2 中，source_image 始终为 None
+    source_image = None
+
     if input_mode == 'Upload TXT File' and txt_file is not None:
         # --- 关键修改：只在 'Upload TXT File' 模式且文件存在时，才读取txt文件 ---
         try:
@@ -181,7 +184,7 @@ def process_with_mode(
 
     # 调用原来的生成函数
     result = run_fontdiffuser_demo_mode(
-        args, pipe, ttf_path, source_image, characters_to_generate,
+        args, pipe, ttf_path, source_image, characters_to_generate, # source_image 为 None
         reference_images, num_inference_steps, guidance_scale, seed
     )
 
@@ -203,26 +206,13 @@ def process_style_transfer(
         print("Error: Source image is required for style transfer.")
         return None
 
-    # 尝试从源图像中推断字符（如果可能），或者让用户指定字符（这里简化，假设字符是 'X' 或者从其他地方获取）
     # 为了兼容 sampling 函数，我们需要一个 content_character
-    # 一个简单的办法是让用户输入一个字符，或者从源图像中推断（这很复杂）
-    # 为了演示，我们假设字符是 'X'，但实际上 sampling 应该能处理 content_image 为非 None 的情况
-    # 关键在于 sampling 函数如何使用 content_image 和 style_images
-    # 我们传递一个空字符串或单个占位符字符，并设置 character_input=False
-    # 但这可能需要 sampling 函数内部的逻辑支持
-    # 如果 sampling 函数设计为：有 content_image 时，忽略 content_character，那么我们可以传入一个占位符
-    # 但更可能的是，我们需要确保 sampling 函数接收正确的参数
-    # 在 run_fontdiffuser_demo_mode 中，我们已经设置了 args.character_input = False if source_image is not None else True
-    # 这意味着如果 source_image 存在，sampling 应该使用 content_image 而不是 content_character
-
-    # 为了风格迁移，我们只需要一个字符，可以是任意字符或从源图像推断
-    # 这里我们假设一个占位符字符，因为 content_image 会覆盖 content_character
+    # 我们传递一个占位符字符，并设置 character_input=False
     dummy_character = "X" # 占位符，sampling 函数应优先使用 source_image
 
-    # 重用 run_fontdiffuser_demo_mode，但只处理一个字符
-    # 设置 character_input 为 False，表示使用 content_image
+    # 设置参数
     args.character_input = False
-    args.content_character = dummy_character # 占位符
+    args.content_character = dummy_character
     args.method = "multistep"
     args.algorithm_type = "dpmsolver++"
     args.demo = True
@@ -252,7 +242,7 @@ def process_style_transfer(
             # 保存结果
             output_dir = "img"
             os.makedirs(output_dir, exist_ok=True)
-            safe_char_filename = "style_transfer_result" # 或者基于源图像文件名生成
+            safe_char_filename = "style_transfer_result"
             import time
             timestamp = int(time.time())
             result_filename = f"{safe_char_filename}_{timestamp}.png"
@@ -286,17 +276,30 @@ def main():
                 # --- Option 1: Style Transfer ---
                 with gr.Row():
                     with gr.Column(scale=1):
-                        source_image_opt1 = gr.Image(
-                            width=320,
-                            label="Source Image (Single Character)",
-                            image_mode="RGB",
-                            type="pil",
-                        )
-                        # 可以添加一个输入框让用户指定源图像中的字符（可选）
-                        # source_char_opt1 = gr.Textbox(
-                        #     label="Character in Source Image (Optional)",
-                        #     max_lines=1
-                        # )
+                        with gr.Row():
+                            source_image_opt1 = gr.Image(
+                                width=320,
+                                label="Source Image (Single Character)",
+                                image_mode="RGB",
+                                type="pil",
+                            )
+                            # 将参考图像上传和预览放在同一行
+                            with gr.Column(scale=1): # 这个 Column 用于包裹 Row
+                                with gr.Row():
+                                    # 显示第一个参考图像的预览
+                                    reference_image_preview_opt1 = gr.Image(
+                                        width=320,
+                                        label="Reference Image Preview (First)",
+                                        image_mode="RGB",
+                                        type="pil",
+                                        interactive=False # 设置为不可交互，仅用于预览
+                                    )
+                                    # 上传多个参考图像
+                                    reference_files_opt1 = gr.Files(
+                                        label="Upload Reference Images (Style)",
+                                        type="filepath",
+                                        file_count="multiple"
+                                    )
 
                         with gr.Row():
                             fontdiffuser_output_image_opt1 = gr.Image(
@@ -325,19 +328,32 @@ def main():
 
                         FontDiffuser_opt1 = gr.Button("Run Style Transfer")
 
-                    # 右侧列：参考图像
-                    with gr.Column(scale=1):
-                        reference_images_opt1 = gr.Files(
-                            label="Reference Images (Style)",
-                            type="filepath",
-                            file_count="multiple"
+                        # 定义函数：当上传文件改变时，更新预览图像
+                        def update_reference_preview_opt1(files):
+                            if files and len(files) > 0:
+                                # 加载第一个文件
+                                try:
+                                    img = Image.open(files[0]).convert("RGB")
+                                    return img
+                                except Exception as e:
+                                    print(f"Error loading preview image: {e}")
+                                    return None
+                            else:
+                                return None
+
+                        # 绑定 change 事件
+                        reference_files_opt1.change(
+                            fn=update_reference_preview_opt1,
+                            inputs=reference_files_opt1,
+                            outputs=reference_image_preview_opt1
                         )
 
+                # 绑定点击事件，将 reference_files_opt1 作为参考图像输入
                 FontDiffuser_opt1.click(
                     fn=functools.partial(process_style_transfer, args, pipe, ttf_path),
                     inputs=[
                         source_image_opt1,
-                        reference_images_opt1,
+                        reference_files_opt1, # 传入整个文件列表
                         num_inference_steps_opt1,
                         guidance_scale_opt1,
                     ],
@@ -345,21 +361,28 @@ def main():
                 )
 
             with gr.TabItem("Direct TTF as Source"):
-                # --- Option 2: TTF Source (Original functionality) ---
+                # --- Option 2: TTF Source (Original functionality, without source image) ---
                 with gr.Row():
                     with gr.Column(scale=1):
-                        with gr.Row():
-                            source_image_opt2 = gr.Image(
-                                width=320,
-                                label="[Option 1] Source Image (Optional)",
-                                image_mode="RGB",
-                                type="pil",
-                            )
-                            reference_images_opt2 = gr.Files(
-                                label="Reference Images",
-                                type="filepath",
-                                file_count="multiple"
-                            )
+                        # 移除了 source_image_opt2
+                        # 将参考图像上传和预览放在同一行
+                        with gr.Column(scale=1): # 这个 Column 用于包裹 Row
+                            with gr.Row():
+                                # 显示第一个参考图像的预览
+                                reference_image_preview_opt2 = gr.Image(
+                                    width=320,
+                                    height=400,
+                                    label="Reference Image Preview (First)",
+                                    image_mode="RGB",
+                                    type="pil",
+                                    interactive=False  # 设置为不可交互，仅用于预览
+                                )
+                                # 上传多个参考图像
+                                reference_images_opt2 = gr.Files(
+                                    label="Upload Reference Images",
+                                    type="filepath",
+                                    file_count="multiple"
+                                )
 
                         # 添加模式切换组件
                         input_mode_opt2 = gr.Radio(
@@ -425,15 +448,35 @@ def main():
 
                         FontDiffuser_opt2 = gr.Button("Run FontDiffuser")
 
-                        # 修改按钮点击事件，传入模式选择
+                        # 定义函数：当上传文件改变时，更新预览图像
+                        def update_reference_preview_opt2(files):
+                            if files and len(files) > 0:
+                                # 加载第一个文件
+                                try:
+                                    img = Image.open(files[0]).convert("RGB")
+                                    return img
+                                except Exception as e:
+                                    print(f"Error loading preview image: {e}")
+                                    return None
+                            else:
+                                return None
+
+                        # 绑定 change 事件
+                        reference_images_opt2.change(
+                            fn=update_reference_preview_opt2,
+                            inputs=reference_images_opt2,
+                            outputs=reference_image_preview_opt2
+                        )
+
+                        # 修改按钮点击事件，移除 source_image_opt2 输入
                         FontDiffuser_opt2.click(
                             fn=functools.partial(process_with_mode, args, pipe, ttf_path),
                             inputs=[
-                                source_image_opt2, # 这个在 TTF 模式下通常为 None
+                                # source_image_opt2, # 移除
                                 input_mode_opt2,  # 新增：输入模式
                                 manual_character_opt2,  # 手动输入字符
                                 txt_file_opt2,  # txt文件
-                                reference_images_opt2,
+                                reference_images_opt2, # 传入整个文件列表
                                 num_inference_steps_opt2,
                                 guidance_scale_opt2,
                             ],
