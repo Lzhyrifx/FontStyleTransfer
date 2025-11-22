@@ -11,3 +11,9 @@ ckpt:[GoogleDrive](https://drive.google.com/drive/folders/12hfuZ9MQvXqcteNuz7JQ2
 
 # 图像转字体
 img2svg:svg.py
+
+# 声明
+
+- 本存储库基于华南理工大学深度学习与视觉计算实验室（DLVC-Lab）2023年版权所有的原项目 Fork 而来，仅可用于非商业研究目的
+- 如需商业使用，请联系金连文教授（eelwjin@scut.edu.cn）
+- 原项目核心知识产权归华南理工大学[深度学习与视觉计算实验室（DLVC-Lab）](http://www.dlvc-lab.net)所有
