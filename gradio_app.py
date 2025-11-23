@@ -34,97 +34,150 @@ def run_fontdiffuser_demo_mode(
         pipe,
         ttf_path: str,
         source_image: Optional[Image.Image], # 保留，用于 Option 1
-        character: str,
+        character_for_display: str, # 用于显示的字符（前10个）
+        all_characters_to_cache: str, # 用于缓存的所有字符
         reference_images,
         num_inference_steps: int = 20,
         guidance_scale: float = 7.5,
         seed: Optional[int] = None,
 ):
-    if not character.strip():
-        print("Warning: Input character string is empty.")
+    if not character_for_display.strip():
+        print("Warning: Character string for display is empty.")
         return None
 
     output_dir = "img"
     os.makedirs(output_dir, exist_ok=True)
 
-    # --- 新增：用于存储所有字符图片的列表 ---
-    generated_images = []
+    # --- 新增：首先处理所有需要缓存的字符 ---
     current_seed = seed if isinstance(seed, int) else random.randint(0, 10000)
-
     base_args = args.__dict__.copy()
 
-    for i, char in enumerate(character):
-        print(f"  Processing character '{char}' ({i + 1}/{len(character)})")
+    # 确保 reference_images 被处理
+    if not isinstance(reference_images, list):
+        reference_images = [reference_images]
+    valid_ref_paths = [f for f in reference_images if f is not None and os.path.exists(f)]
+    if not valid_ref_paths:
+        print("Warning: No valid reference images provided for character generation.")
+        style_images = []
+    else:
+        style_images = [Image.open(f).convert("RGB") for f in valid_ref_paths]
 
-        # --- 新增：检查 img 文件夹下是否已有该字符的图片 ---
+    for i, char in enumerate(all_characters_to_cache):
+        print(f"  Caching character: '{char}' ({i + 1}/{len(all_characters_to_cache)})")
+
+        # --- 检查 img 文件夹下是否已有该字符的图片 ---
         safe_char_filename = "".join(c for c in char if c.isalnum() or c in (' ', '-', '_')).rstrip()
         if not safe_char_filename:
             safe_char_filename = "unknown_char"
 
-        # 构造图片文件名，这里我们使用最简单的命名方式，不包含种子和时间戳，以便于查找
+        # 构造图片文件名
+        char_filepath = os.path.join(output_dir, f"{safe_char_filename}.png")
+
+        if os.path.exists(char_filepath):
+            # 如果图片已存在，跳过生成步骤
+            print(f"    Using existing image for cache: {char_filepath}")
+            continue  # 跳过生成步骤
+        else:
+            # 如果图片不存在，则生成图片并保存
+            char_args = type('Args', (), base_args)()
+
+            char_args.method = "multistep"
+            char_args.algorithm_type = "dpmsolver++"
+            char_args.demo = True
+            char_args.ttf_path = ttf_path
+            # Option 2 时 source_image 为 None，所以 character_input 会是 True
+            char_args.character_input = False if source_image is not None else True
+            char_args.content_character = char
+            char_args.num_inference_steps = num_inference_steps
+            char_args.guidance_scale = guidance_scale
+            char_args.seed = current_seed + i # 使用当前字符的索引作为种子偏移
+
+            try:
+                char_image = sampling(
+                    args=char_args,
+                    pipe=pipe,
+                    content_image=source_image,
+                    style_images=style_images,
+                )
+                if char_image is not None:
+                    # 保存图片，使用简单文件名
+                    try:
+                        char_image.save(char_filepath)
+                        print(f"    Saved new image for cache: {char_filepath}")
+                    except Exception as e:
+                        print(f"    Error saving new image for cache {char_filepath}: {e}")
+                else:
+                    print(f"    Warning: Generation failed for character '{char}' (for cache), skipping.")
+            except Exception as e:
+                print(f"    Error generating character '{char}' (for cache): {e}")
+                continue
+    # --- 缓存处理结束 ---
+
+    # --- 现在处理用于显示的字符（character_for_display） ---
+    generated_images = []
+    for i, char in enumerate(character_for_display):
+        print(f"  Processing character for display: '{char}' ({i + 1}/{len(character_for_display)})")
+
+        # --- 检查 img 文件夹下是否已有该字符的图片 ---
+        safe_char_filename = "".join(c for c in char if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        if not safe_char_filename:
+            safe_char_filename = "unknown_char"
+
+        # 构造图片文件名
         char_filepath = os.path.join(output_dir, f"{safe_char_filename}.png")
 
         if os.path.exists(char_filepath):
             # 如果图片已存在，直接加载
             try:
                 char_image = Image.open(char_filepath).convert("RGB")
-                print(f"    Using existing image: {char_filepath}")
+                print(f"    Using existing image for display: {char_filepath}")
                 generated_images.append(char_image)
                 continue  # 跳过生成步骤
             except Exception as e:
-                print(f"    Error loading existing image {char_filepath}: {e}")
+                print(f"    Error loading existing image for display {char_filepath}: {e}")
                 # 如果加载失败，继续执行生成逻辑
-        # --- 新增结束 ---
-
-        # 如果图片不存在或加载失败，则生成图片
-        char_args = type('Args', (), base_args)()
-
-        char_args.method = "multistep"
-        char_args.algorithm_type = "dpmsolver++"
-        char_args.demo = True
-        char_args.ttf_path = ttf_path
-        # Option 2 时 source_image 为 None，所以 character_input 会是 True
-        char_args.character_input = False if source_image is not None else True
-        char_args.content_character = char
-        char_args.num_inference_steps = num_inference_steps
-        char_args.guidance_scale = guidance_scale
-        char_args.seed = current_seed + i
-
-        if not isinstance(reference_images, list):
-            ref_img_paths = [reference_images]
         else:
-            ref_img_paths = reference_images
-        # 过滤掉 None 值和不存在的文件路径
-        valid_ref_paths = [f for f in ref_img_paths if f is not None and os.path.exists(f)]
-        if not valid_ref_paths:
-            print("Warning: No valid reference images provided for character generation.")
-            style_images = []
-        else:
-            style_images = [Image.open(f).convert("RGB") for f in valid_ref_paths]
+            # 理论上不应该走到这里，因为上面已经缓存了所有需要的字符
+            # 但如果因为某些原因文件不存在，我们再生成一次
+            print(f"    Image not found in cache for display, attempting to generate: {char_filepath}")
+            char_args = type('Args', (), base_args)()
 
-        try:
-            char_image = sampling(
-                args=char_args,
-                pipe=pipe,
-                content_image=source_image,
-                style_images=style_images,
-            )
-            if char_image is not None:
-                # 保存图片，使用简单文件名
-                try:
-                    char_image.save(char_filepath)
-                    print(f"    Saved new image: {char_filepath}")
-                    generated_images.append(char_image)
-                except Exception as e:
-                    print(f"    Error saving new image {char_filepath}: {e}")
-            else:
-                print(f"    Warning: Generation failed for character '{char}', skipping.")
-        except Exception as e:
-            print(f"    Error generating character '{char}': {e}")
-            continue
+            char_args.method = "multistep"
+            char_args.algorithm_type = "dpmsolver++"
+            char_args.demo = True
+            char_args.ttf_path = ttf_path
+            # Option 2 时 source_image 为 None，所以 character_input 会是 True
+            char_args.character_input = False if source_image is not None else True
+            char_args.content_character = char
+            char_args.num_inference_steps = num_inference_steps
+            char_args.guidance_scale = guidance_scale
+            char_args.seed = current_seed + i # 使用当前字符的索引作为种子偏移
+
+            try:
+                char_image = sampling(
+                    args=char_args,
+                    pipe=pipe,
+                    content_image=source_image,
+                    style_images=style_images,
+                )
+                if char_image is not None:
+                    # 保存图片，使用简单文件名
+                    try:
+                        char_image.save(char_filepath)
+                        print(f"    Saved new image for display: {char_filepath}")
+                        generated_images.append(char_image)
+                    except Exception as e:
+                        print(f"    Error saving new image for display {char_filepath}: {e}")
+                        # 如果保存失败，可以选择不添加到列表，或者添加生成的图像
+                        generated_images.append(char_image) # 仍然添加到列表用于显示
+                else:
+                    print(f"    Warning: Generation failed for character '{char}' (for display), skipping.")
+            except Exception as e:
+                print(f"    Error generating character '{char}' (for display): {e}")
+                continue
 
     if not generated_images:
-        print("No characters were successfully processed (generated or loaded).")
+        print("No characters were successfully processed (generated or loaded) for display.")
         return None
 
     if len(generated_images) == 1:
@@ -164,27 +217,29 @@ def process_with_mode(
     if input_mode == 'Upload TXT File' and txt_file is not None:
         # --- 关键修改：只在 'Upload TXT File' 模式且文件存在时，才读取txt文件 ---
         try:
-            # 从txt文件中读取字符
+            # 从txt文件中读取**所有**字符
             all_characters = get_characters_from_txt(txt_file.name)
-            # 只取前10个字符用于生成和显示
-            characters_to_generate = all_characters[:10]
-            print(f"Processing characters from TXT file (first 10 shown): '{characters_to_generate}'")
+            # 只取前10个字符用于**显示**
+            characters_to_display = all_characters[:10]
+            print(f"Processing characters from TXT file (first 10 shown): '{characters_to_display}'")
+            print(f"Will cache images for ALL characters in TXT file: '{all_characters}'")
         except Exception as e:
             print(f"Error reading TXT file: {e}")
             print("Failed to read TXT file, aborting generation.")
             return None
     elif input_mode == 'Manual Input':
         # 使用手动输入的字符
-        characters_to_generate = manual_character
-        print(f"Processing manually entered characters: '{characters_to_generate}'")
+        characters_to_display = manual_character
+        all_characters = manual_character # 对于手动输入，所有字符就是显示的字符
+        print(f"Processing manually entered characters: '{characters_to_display}'")
     else:
         # 如果是 'Upload TXT File' 模式但没有上传文件，或者模式无效
         print(f"No valid input provided or file not uploaded in 'Upload TXT File' mode. input_mode: {input_mode}, txt_file: {txt_file}")
         return None
 
-    # 调用原来的生成函数
+    # 调用原来的生成函数，传入所有字符用于缓存，前10个字符用于显示
     result = run_fontdiffuser_demo_mode(
-        args, pipe, ttf_path, source_image, characters_to_generate, # source_image 为 None
+        args, pipe, ttf_path, source_image, characters_to_display, all_characters, # source_image 为 None, characters_to_display, all_characters
         reference_images, num_inference_steps, guidance_scale, seed
     )
 
